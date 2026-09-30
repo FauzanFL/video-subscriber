@@ -10,6 +10,13 @@ VideoDecoder::VideoDecoder(QObject *parent)
     pipeline_(nullptr),
     appsrc_(nullptr)
 {
+    // Timer timeout: Jika 2 detik tidak ada frame baru, atur status video terputus
+    m_timeoutTimer = new QTimer(this);
+    m_timeoutTimer->setInterval(2000);
+    connect(m_timeoutTimer, &QTimer::timeout, this, [this]() {
+        setHasVideo(false);
+    });
+
     GError* error = nullptr;
 
     // Pipeline GStreamer: AppSrc (H.265) -> Parse -> Decode -> Format BGRA -> AppSink
@@ -59,6 +66,13 @@ void VideoDecoder::setVideoSink(QVideoSink* sink) {
     }
 }
 
+void VideoDecoder::setHasVideo(bool hasVideo) {
+    if (m_hasVideo != hasVideo) {
+        m_hasVideo = hasVideo;
+        emit hasVideoChanged();
+    }
+}
+
 void VideoDecoder::pushH265Data(const std::vector<uint8_t>& data) {
     if (!appsrc_ || data.empty()) {
         return;
@@ -99,6 +113,9 @@ GstFlowReturn VideoDecoder::on_decoded_sample(GstElement* sink, gpointer user_da
                 if (self->m_sink) {
                     self->m_sink->setVideoFrame(qframe);
                 }
+                // Tandai video sedang aktif & reset timer timeout
+                self->setHasVideo(true);
+                self->m_timeoutTimer->start();
             }, Qt::QueuedConnection);
         }
         gst_buffer_unmap(buffer, &map);
