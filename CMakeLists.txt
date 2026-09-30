@@ -32,6 +32,7 @@ qt_add_qml_module(appStreamSubscriber
         Main.qml
         SOURCES qos_profiles.h
         SOURCES ddssubscriber.h ddssubscriber.cpp
+        SOURCES videodecoder.h videodecoder.cpp
 )
 
 # Qt for iOS sets MACOSX_BUNDLE_GUI_IDENTIFIER automatically since Qt 6.1.
