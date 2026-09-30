@@ -1,0 +1,6 @@
+module VideoMsg {
+    struct Frame {
+        unsigned long id;
+        sequence<octet> data;
+    };
+};
