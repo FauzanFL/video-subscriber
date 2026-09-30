@@ -1,10 +1,19 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(StreamSubscriber VERSION 0.1 LANGUAGES CXX)
+project(StreamSubscriber VERSION 0.1 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Quick)
+find_package(Qt6 REQUIRED COMPONENTS Quick Multimedia)
+find_package(CycloneDDS-CXX REQUIRED)
+find_package(PkgConfig REQUIRED)
+
+pkg_check_modules(GST REQUIRED gstreamer-1.0 gstreamer-app-1.0 gstreamer-video-1.0)
+
+idlcxx_generate(
+    TARGET generated
+    FILES idl/VideoMessage.idl
+)
 
 qt_standard_project_setup(REQUIRES 6.10)
 
@@ -21,6 +30,8 @@ qt_add_qml_module(appStreamSubscriber
     URI StreamSubscriber
     QML_FILES
         Main.qml
+        SOURCES qos_profiles.h
+        SOURCES ddssubscriber.h ddssubscriber.cpp
 )
 
 # Qt for iOS sets MACOSX_BUNDLE_GUI_IDENTIFIER automatically since Qt 6.1.
@@ -34,8 +45,15 @@ set_target_properties(appStreamSubscriber PROPERTIES
     WIN32_EXECUTABLE TRUE
 )
 
+target_include_directories(appStreamSubscriber PRIVATE ${GST_INCLUDE_DIRS})
+
 target_link_libraries(appStreamSubscriber
-    PRIVATE Qt6::Quick
+    PRIVATE
+    Qt6::Quick
+    Qt6::Multimedia
+    CycloneDDS-CXX::ddscxx
+    generated
+    ${GST_LIBRARIES}
 )
 
 install(TARGETS appStreamSubscriber
