@@ -30,8 +30,8 @@ int main(int argc, char *argv[])
     QObject* rootObject = engine.rootObjects().first();
     auto* decoder = rootObject->findChild<VideoDecoder*>("videoDecoder");
 
-    // Inisialisasi DDS Participant (Domain 0)
-    dds::domain::DomainParticipant participant(0);
+    // Inisialisasi DDS Participant (Domain 99)
+    dds::domain::DomainParticipant participant(99);
 
     // Buat Subscriber dan jadikan QApplication sebagai parent agar memori dikelola Qt
     auto subscriber = std::make_unique<DdsSubscriber>(participant, &app);
