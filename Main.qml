@@ -11,11 +11,6 @@ ApplicationWindow {
     visible: true
     title: "DDS Video Subscriber"
 
-    VideoDecoder {
-        id: decoder
-        objectName: "videoDecoder"
-    }
-
     Rectangle {
         anchors.fill: parent
         color: "#1e1e1e"
@@ -23,17 +18,17 @@ ApplicationWindow {
         VideoOutput {
             id: videoOutput
             anchors.fill: parent
-            visible: decoder.hasVideo
+            visible: BackendDecoder.hasVideo
         }
 
         Column {
             anchors.centerIn: parent
             spacing: 15
-            visible: !decoder.hasVideo
+            visible: !BackendDecoder.hasVideo
 
             BusyIndicator {
                 anchors.horizontalCenter: parent.horizontalCenter
-                running: !decoder.hasVideo
+                running: !BackendDecoder.hasVideo
             }
 
             Text {
@@ -55,6 +50,6 @@ ApplicationWindow {
 
 
     Component.onCompleted: {
-        decoder.videoSink = videoOutput.videoSink
+        BackendDecoder.videoSink = videoOutput.videoSink
     }
 }

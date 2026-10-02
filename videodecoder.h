@@ -14,7 +14,13 @@ class VideoDecoder : public QObject
     Q_PROPERTY(QVideoSink* videoSink READ videoSink WRITE setVideoSink NOTIFY videoSinkChanged)
     Q_PROPERTY(bool hasVideo READ hasVideo NOTIFY hasVideoChanged)
 public:
-    explicit VideoDecoder(QObject *parent = nullptr);
+    // Pilihan mode output GStreamer
+    enum class StreamMode {
+        Compressed_H265, // Ekstrak byte-stream H.265 (Bandwidth kecil)
+        Raw_BGRA         // Decode menjadi frame mentah BGRA (Bandwidth besar)
+    };
+
+    explicit VideoDecoder(StreamMode mode, QObject *parent = nullptr);
     ~VideoDecoder() override;
 
     QVideoSink* videoSink() const;
@@ -24,7 +30,7 @@ public:
 
 public slots:
     // Slot Qt yang dipanggil saat sinyal DdsSubscriber::frameReceived dipancarkan
-    void pushH265Data(const std::vector<uint8_t>& data);
+    void pushData(const std::vector<uint8_t>& data);
 
 signals:
     void videoSinkChanged();
@@ -34,6 +40,9 @@ private:
     void setHasVideo(bool hasVideo);
 
     QVideoSink* m_sink = nullptr;
+    StreamMode m_mode;
+
+    // GStreamer components (hanya digunakan untuk mode H.265)
     GstElement* pipeline_ = nullptr;
     GstElement* appsrc_ = nullptr;
 

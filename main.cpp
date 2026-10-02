@@ -14,8 +14,22 @@ int main(int argc, char *argv[])
     // Inisialisasi GStreamer
     gst_init(&argc, &argv);
 
-    // Registrasi komponen C++ agar dapat diakses oleh QML
-    qmlRegisterType<VideoDecoder>("StreamSubscriber", 1, 0, "VideoDecoder");
+    VideoDecoder* decoder = new VideoDecoder(VideoDecoder::StreamMode::Compressed_H265, &app);
+
+    qmlRegisterSingletonInstance("StreamSubscriber", 1, 0, "BackendDecoder", decoder);
+
+    // Inisialisasi DDS Participant (Domain 99)
+    dds::domain::DomainParticipant participant(99);
+
+    // Buat Subscriber dan jadikan QApplication sebagai parent agar memori dikelola Qt
+    auto subscriber = std::make_unique<DdsSubscriber>(participant, &app);
+
+    // Hubungkan Sinyal Qt dari DdsSubscriber ke Slot VideoDecoder
+    QObject::connect(subscriber.get(), &DdsSubscriber::frameReceived,
+                     decoder, &VideoDecoder::pushData);
+
+    // Mulai mendengarkan stream data DDS
+    subscriber->startListening();
 
     QQmlApplicationEngine engine;
     QObject::connect(
@@ -25,25 +39,6 @@ int main(int argc, char *argv[])
         []() { QCoreApplication::exit(-1); },
         Qt::QueuedConnection);
     engine.loadFromModule("StreamSubscriber", "Main");
-
-    // Mencari objek VideoDecoder yang dibuat oleh QML (berdasarkan objectName)
-    QObject* rootObject = engine.rootObjects().first();
-    auto* decoder = rootObject->findChild<VideoDecoder*>("videoDecoder");
-
-    // Inisialisasi DDS Participant (Domain 99)
-    dds::domain::DomainParticipant participant(99);
-
-    // Buat Subscriber dan jadikan QApplication sebagai parent agar memori dikelola Qt
-    auto subscriber = std::make_unique<DdsSubscriber>(participant, &app);
-
-    if (decoder) {
-        // Hubungkan Sinyal Qt dari DdsSubscriber ke Slot VideoDecoder
-        QObject::connect(subscriber.get(), &DdsSubscriber::frameReceived,
-                         decoder, &VideoDecoder::pushH265Data);
-
-        // Mulai mendengarkan stream data DDS
-        subscriber->startListening();
-    }
 
     return QGuiApplication::exec();
 }

@@ -3,10 +3,12 @@
 #include <gst/app/gstappsink.h>
 #include <QMetaObject>
 #include <iostream>
+#include <QDebug>
 
-VideoDecoder::VideoDecoder(QObject *parent)
+VideoDecoder::VideoDecoder(StreamMode mode, QObject *parent)
     : QObject{parent},
     m_sink(nullptr),
+    m_mode(mode),
     pipeline_(nullptr),
     appsrc_(nullptr)
 {
@@ -17,30 +19,37 @@ VideoDecoder::VideoDecoder(QObject *parent)
         setHasVideo(false);
     });
 
-    GError* error = nullptr;
+    if (m_mode == StreamMode::Compressed_H265) {
+        qDebug() << "[VideoDecoder] Mode: Terkompresi H.265 (Menggunakan GStreamer)";
 
-    // Pipeline GStreamer: AppSrc (H.265) -> Parse -> Decode -> Format BGRA -> AppSink
-    pipeline_ = gst_parse_launch(
-        "appsrc name=mysrc format=time is-live=true "
-        "! h265parse ! avdec_h265 ! videoconvert "
-        "! video/x-raw,format=BGRA,width=640,height=480 "
-        "! appsink name=mysink emit-signals=true sync=false", &error);
+        GError* error = nullptr;
 
-    if (error) {
-        std::cerr << "[VideoDecoder] Pipeline GStreamer Error: " << error->message << std::endl;
-        g_error_free(error);
-        return;
+        // Pipeline GStreamer: AppSrc (H.265) -> Parse -> Decode -> Format BGRA -> AppSink
+        pipeline_ = gst_parse_launch(
+            "appsrc name=mysrc format=time is-live=true "
+            "! h265parse ! avdec_h265 ! videoconvert "
+            "! video/x-raw,format=BGRA,width=640,height=480 "
+            "! appsink name=mysink emit-signals=true sync=false", &error);
+
+        if (error) {
+            std::cerr << "[VideoDecoder] Pipeline GStreamer Error: " << error->message << std::endl;
+            g_error_free(error);
+            return;
+        }
+
+        appsrc_ = gst_bin_get_by_name(GST_BIN(pipeline_), "mysrc");
+        GstElement* appsink = gst_bin_get_by_name(GST_BIN(pipeline_), "mysink");
+
+        if (appsink) {
+            g_signal_connect_data(appsink, "new-sample", G_CALLBACK(on_decoded_sample), this, nullptr, static_cast<GConnectFlags>(0));
+            gst_object_unref(appsink);
+        }
+
+        gst_element_set_state(pipeline_, GST_STATE_PLAYING);
+
+    } else {
+        qDebug() << "[VideoDecoder] Mode: Raw Frame BGRA (Bypass GStreamer)";
     }
-
-    appsrc_ = gst_bin_get_by_name(GST_BIN(pipeline_), "mysrc");
-    GstElement* appsink = gst_bin_get_by_name(GST_BIN(pipeline_), "mysink");
-
-    if (appsink) {
-        g_signal_connect_data(appsink, "new-sample", G_CALLBACK(on_decoded_sample), this, nullptr, static_cast<GConnectFlags>(0));
-        gst_object_unref(appsink);
-    }
-
-    gst_element_set_state(pipeline_, GST_STATE_PLAYING);
 }
 
 VideoDecoder::~VideoDecoder() {
@@ -73,15 +82,38 @@ void VideoDecoder::setHasVideo(bool hasVideo) {
     }
 }
 
-void VideoDecoder::pushH265Data(const std::vector<uint8_t>& data) {
-    if (!appsrc_ || data.empty()) {
-        return;
+void VideoDecoder::pushData(const std::vector<uint8_t>& data) {
+    if (data.empty()) return;
+
+    // JIKA MODE RAW: Render langsung ke Qt tanpa GStreamer
+    if (m_mode == StreamMode::Raw_BGRA) {
+        QVideoFrameFormat format(QSize(640, 480), QVideoFrameFormat::Format_BGRA8888);
+        QVideoFrame qframe(format);
+
+        if (qframe.map(QVideoFrame::WriteOnly)) {
+            // Ukuran byte data mentah 640x480x4 (BGRA) = 1.228.800 bytes
+            size_t copySize = std::min(data.size(), static_cast<size_t>(qframe.mappedBytes(0)));
+            memcpy(qframe.bits(0), data.data(), copySize);
+            qframe.unmap();
+
+            QMetaObject::invokeMethod(this, [this, qframe]() {
+                if (m_sink) {
+                    m_sink->setVideoFrame(qframe);
+                }
+                setHasVideo(true);
+                m_timeoutTimer->start();
+            }, Qt::QueuedConnection);
+        }
+        return; // Selesai, jangan masuk ke logika GStreamer
     }
 
-    GstBuffer* buffer = gst_buffer_new_allocate(nullptr, data.size(), nullptr);
-    if (buffer) {
-        gst_buffer_fill(buffer, 0, data.data(), data.size());
-        gst_app_src_push_buffer(GST_APP_SRC(appsrc_), buffer);
+    // JIKA MODE H.265: Masukkan byte terkompresi ke AppSrc GStreamer
+    if (appsrc_) {
+        GstBuffer* buffer = gst_buffer_new_allocate(nullptr, data.size(), nullptr);
+        if (buffer) {
+            gst_buffer_fill(buffer, 0, data.data(), data.size());
+            gst_app_src_push_buffer(GST_APP_SRC(appsrc_), buffer);
+        }
     }
 }
 
