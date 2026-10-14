@@ -16,7 +16,7 @@ class VideoDecoder : public QObject
 public:
     // Pilihan mode output GStreamer
     enum class StreamMode {
-        Compressed_H265, // Ekstrak byte-stream H.265 (Bandwidth kecil)
+        Compressed_H264, // Ekstrak byte-stream H.264 (Bandwidth kecil)
         Raw_BGRA         // Decode menjadi frame mentah BGRA (Bandwidth besar)
     };
 
@@ -42,7 +42,7 @@ private:
     QVideoSink* m_sink = nullptr;
     StreamMode m_mode;
 
-    // GStreamer components (hanya digunakan untuk mode H.265)
+    // GStreamer components (hanya digunakan untuk mode H.264)
     GstElement* pipeline_ = nullptr;
     GstElement* appsrc_ = nullptr;
 

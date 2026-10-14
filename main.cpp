@@ -14,7 +14,7 @@ int main(int argc, char *argv[])
     // Inisialisasi GStreamer
     gst_init(&argc, &argv);
 
-    VideoDecoder* decoder = new VideoDecoder(VideoDecoder::StreamMode::Compressed_H265, &app);
+    VideoDecoder* decoder = new VideoDecoder(VideoDecoder::StreamMode::Compressed_H264, &app);
 
     qmlRegisterSingletonInstance("StreamSubscriber", 1, 0, "BackendDecoder", decoder);
 

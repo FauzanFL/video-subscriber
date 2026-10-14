@@ -19,15 +19,15 @@ VideoDecoder::VideoDecoder(StreamMode mode, QObject *parent)
         setHasVideo(false);
     });
 
-    if (m_mode == StreamMode::Compressed_H265) {
-        qDebug() << "[VideoDecoder] Mode: Terkompresi H.265 (Menggunakan GStreamer)";
+    if (m_mode == StreamMode::Compressed_H264) {
+        qDebug() << "[VideoDecoder] Mode: Terkompresi H.264 (Menggunakan GStreamer)";
 
         GError* error = nullptr;
 
-        // Pipeline GStreamer: AppSrc (H.265) -> Parse -> Decode -> Format BGRA -> AppSink
+        // Pipeline GStreamer: AppSrc (H.264) -> Parse -> Decode -> Format BGRA -> AppSink
         pipeline_ = gst_parse_launch(
             "appsrc name=mysrc format=time is-live=true "
-            "! h265parse ! avdec_h265 ! videoconvert "
+            "! h264parse ! avdec_h264 ! videoconvert ! videoscale "
             "! video/x-raw,format=BGRA,width=640,height=480 "
             "! appsink name=mysink emit-signals=true sync=false", &error);
 
@@ -107,7 +107,7 @@ void VideoDecoder::pushData(const std::vector<uint8_t>& data) {
         return; // Selesai, jangan masuk ke logika GStreamer
     }
 
-    // JIKA MODE H.265: Masukkan byte terkompresi ke AppSrc GStreamer
+    // JIKA MODE H.264: Masukkan byte terkompresi ke AppSrc GStreamer
     if (appsrc_) {
         GstBuffer* buffer = gst_buffer_new_allocate(nullptr, data.size(), nullptr);
         if (buffer) {
