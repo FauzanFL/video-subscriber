@@ -5,7 +5,6 @@
 #include <dds/dds.hpp>
 
 #include "videodecoder.h"
-#include "ddssubscriber.h"
 
 int main(int argc, char *argv[])
 {
@@ -14,22 +13,9 @@ int main(int argc, char *argv[])
     // Inisialisasi GStreamer
     gst_init(&argc, &argv);
 
-    VideoDecoder* decoder = new VideoDecoder(VideoDecoder::StreamMode::Compressed_H264, &app);
+    VideoDecoder* decoder = new VideoDecoder("rtsp://localhost:8554/stream", &app);
 
     qmlRegisterSingletonInstance("StreamSubscriber", 1, 0, "BackendDecoder", decoder);
-
-    // Inisialisasi DDS Participant (Domain 99)
-    dds::domain::DomainParticipant participant(99);
-
-    // Buat Subscriber dan jadikan QApplication sebagai parent agar memori dikelola Qt
-    auto subscriber = std::make_unique<DdsSubscriber>(participant, &app);
-
-    // Hubungkan Sinyal Qt dari DdsSubscriber ke Slot VideoDecoder
-    QObject::connect(subscriber.get(), &DdsSubscriber::frameReceived,
-                     decoder, &VideoDecoder::pushData);
-
-    // Mulai mendengarkan stream data DDS
-    subscriber->startListening();
 
     QQmlApplicationEngine engine;
     QObject::connect(

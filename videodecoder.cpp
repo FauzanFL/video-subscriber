@@ -1,55 +1,41 @@
 #include "videodecoder.h"
-#include <gst/app/gstappsrc.h>
 #include <gst/app/gstappsink.h>
 #include <QMetaObject>
 #include <iostream>
 #include <QDebug>
 
-VideoDecoder::VideoDecoder(StreamMode mode, QObject *parent)
+VideoDecoder::VideoDecoder(const QString& rtspUrl, QObject *parent)
     : QObject{parent},
     m_sink(nullptr),
-    m_mode(mode),
+    m_hasVideo(false),
     pipeline_(nullptr),
-    appsrc_(nullptr)
+    m_rtspUrl(rtspUrl)
 {
-    // Timer timeout: Jika 2 detik tidak ada frame baru, atur status video terputus
+    qDebug() << "[VideoDecoder] Mode: RTSP Direct Streaming (" << rtspUrl << ")";
+
     m_timeoutTimer = new QTimer(this);
-    m_timeoutTimer->setInterval(2000);
+    m_timeoutTimer->setInterval(3000);
+
     connect(m_timeoutTimer, &QTimer::timeout, this, [this]() {
-        setHasVideo(false);
+        if (m_hasVideo) {
+            qDebug() << "[VideoDecoder] Koneksi RTSP terputus! Mencoba menghubungkan ulang...";
+            setHasVideo(false);
+        } else {
+            qDebug() << "[VideoDecoder] Mencari stream RTSP...";
+        }
+
+        // 1. Hancurkan pipeline lama sepenuhnya untuk membuang cache & error state
+        stopPipeline();
+
+        // 2. Buat pipeline baru dari nol setelah port jaringan dilepas
+        QTimer::singleShot(1000, this, [this]() {
+            startPipeline();
+            m_timeoutTimer->start();
+        });
     });
 
-    if (m_mode == StreamMode::Compressed_H264) {
-        qDebug() << "[VideoDecoder] Mode: Terkompresi H.264 (Menggunakan GStreamer)";
-
-        GError* error = nullptr;
-
-        // Pipeline GStreamer: AppSrc (H.264) -> Parse -> Decode -> Format BGRA -> AppSink
-        pipeline_ = gst_parse_launch(
-            "appsrc name=mysrc format=time is-live=true "
-            "! h264parse ! avdec_h264 ! videoconvert ! videoscale "
-            "! video/x-raw,format=BGRA,width=640,height=480 "
-            "! appsink name=mysink emit-signals=true sync=false", &error);
-
-        if (error) {
-            std::cerr << "[VideoDecoder] Pipeline GStreamer Error: " << error->message << std::endl;
-            g_error_free(error);
-            return;
-        }
-
-        appsrc_ = gst_bin_get_by_name(GST_BIN(pipeline_), "mysrc");
-        GstElement* appsink = gst_bin_get_by_name(GST_BIN(pipeline_), "mysink");
-
-        if (appsink) {
-            g_signal_connect_data(appsink, "new-sample", G_CALLBACK(on_decoded_sample), this, nullptr, static_cast<GConnectFlags>(0));
-            gst_object_unref(appsink);
-        }
-
-        gst_element_set_state(pipeline_, GST_STATE_PLAYING);
-
-    } else {
-        qDebug() << "[VideoDecoder] Mode: Raw Frame BGRA (Bypass GStreamer)";
-    }
+    startPipeline();
+    m_timeoutTimer->start();
 }
 
 VideoDecoder::~VideoDecoder() {
@@ -57,10 +43,6 @@ VideoDecoder::~VideoDecoder() {
         gst_element_set_state(pipeline_, GST_STATE_NULL);
         gst_object_unref(pipeline_);
         pipeline_ = nullptr;
-    }
-    if (appsrc_) {
-        gst_object_unref(appsrc_);
-        appsrc_ = nullptr;
     }
 }
 
@@ -79,41 +61,6 @@ void VideoDecoder::setHasVideo(bool hasVideo) {
     if (m_hasVideo != hasVideo) {
         m_hasVideo = hasVideo;
         emit hasVideoChanged();
-    }
-}
-
-void VideoDecoder::pushData(const std::vector<uint8_t>& data) {
-    if (data.empty()) return;
-
-    // JIKA MODE RAW: Render langsung ke Qt tanpa GStreamer
-    if (m_mode == StreamMode::Raw_BGRA) {
-        QVideoFrameFormat format(QSize(640, 480), QVideoFrameFormat::Format_BGRA8888);
-        QVideoFrame qframe(format);
-
-        if (qframe.map(QVideoFrame::WriteOnly)) {
-            // Ukuran byte data mentah 640x480x4 (BGRA) = 1.228.800 bytes
-            size_t copySize = std::min(data.size(), static_cast<size_t>(qframe.mappedBytes(0)));
-            memcpy(qframe.bits(0), data.data(), copySize);
-            qframe.unmap();
-
-            QMetaObject::invokeMethod(this, [this, qframe]() {
-                if (m_sink) {
-                    m_sink->setVideoFrame(qframe);
-                }
-                setHasVideo(true);
-                m_timeoutTimer->start();
-            }, Qt::QueuedConnection);
-        }
-        return; // Selesai, jangan masuk ke logika GStreamer
-    }
-
-    // JIKA MODE H.264: Masukkan byte terkompresi ke AppSrc GStreamer
-    if (appsrc_) {
-        GstBuffer* buffer = gst_buffer_new_allocate(nullptr, data.size(), nullptr);
-        if (buffer) {
-            gst_buffer_fill(buffer, 0, data.data(), data.size());
-            gst_app_src_push_buffer(GST_APP_SRC(appsrc_), buffer);
-        }
     }
 }
 
@@ -155,4 +102,45 @@ GstFlowReturn VideoDecoder::on_decoded_sample(GstElement* sink, gpointer user_da
 
     gst_sample_unref(sample);
     return GST_FLOW_OK;
+}
+
+void VideoDecoder::startPipeline() {
+    if (pipeline_) return; // Cegah duplikasi jika pipeline sudah ada
+
+    GError* error = nullptr;
+    // Pipeline GStreamer: RTSP (TCP) -> Depay -> Parse -> Decode -> Format BGRA -> AppSink
+    QString pipelineStr = QString(
+                              "rtspsrc location=%1 protocols=tcp latency=500 "
+                              "! rtph264depay ! h264parse ! avdec_h264 ! videoconvert ! videoscale "
+                              "! video/x-raw,format=BGRA,width=640,height=480 "
+                              "! appsink name=mysink emit-signals=true sync=false"
+                              ).arg(m_rtspUrl);
+
+    pipeline_ = gst_parse_launch(pipelineStr.toStdString().c_str(), &error);
+
+    if (error) {
+        std::cerr << "[VideoDecoder] Pipeline GStreamer Error: " << error->message << std::endl;
+        g_error_free(error);
+        return;
+    }
+
+    GstElement* appsink = gst_bin_get_by_name(GST_BIN(pipeline_), "mysink");
+    if (appsink) {
+        g_signal_connect_data(appsink, "new-sample", G_CALLBACK(on_decoded_sample), this, nullptr, static_cast<GConnectFlags>(0));
+        gst_object_unref(appsink);
+    }
+
+    gst_element_set_state(pipeline_, GST_STATE_PLAYING);
+    qDebug() << "[VideoDecoder] Pipeline berhasil dibuat dan dijalankan.";
+}
+
+void VideoDecoder::stopPipeline() {
+    if (pipeline_) {
+        // Hentikan state
+        gst_element_set_state(pipeline_, GST_STATE_NULL);
+        // Hapus referensi dari memori (Ini kunci utama agar socket jaringan direset!)
+        gst_object_unref(pipeline_);
+        pipeline_ = nullptr;
+        qDebug() << "[VideoDecoder] Pipeline telah dihancurkan secara aman.";
+    }
 }

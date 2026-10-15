@@ -31,7 +31,7 @@ qt_add_qml_module(appStreamSubscriber
     QML_FILES
         Main.qml
         SOURCES qos_profiles.h
-        SOURCES ddssubscriber.h ddssubscriber.cpp
+        SOURCES
         SOURCES videodecoder.h videodecoder.cpp
 )
 
