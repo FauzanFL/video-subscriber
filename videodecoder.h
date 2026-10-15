@@ -13,6 +13,8 @@ class VideoDecoder : public QObject
     Q_OBJECT
     Q_PROPERTY(QVideoSink* videoSink READ videoSink WRITE setVideoSink NOTIFY videoSinkChanged)
     Q_PROPERTY(bool hasVideo READ hasVideo NOTIFY hasVideoChanged)
+    Q_PROPERTY(int fps READ fps NOTIFY statsChanged)
+    Q_PROPERTY(double bandwidth READ bandwidth NOTIFY statsChanged)
 public:
 
     explicit VideoDecoder(const QString& rtspUrl, QObject *parent = nullptr);
@@ -22,10 +24,13 @@ public:
     void setVideoSink(QVideoSink* sink);
 
     bool hasVideo() const { return m_hasVideo; }
+    int fps() const { return m_currentFps; }
+    double bandwidth() const { return m_currentBandwidth; }
 
 signals:
     void videoSinkChanged();
     void hasVideoChanged();
+    void statsChanged();
 
 private:
     void setHasVideo(bool hasVideo);
@@ -39,7 +44,15 @@ private:
     GstElement* pipeline_ = nullptr;
 
     bool m_hasVideo = false;
-    QTimer* m_timeoutTimer = nullptr;
+    QTimer* m_timeoutTimer;
+    QTimer* m_statsTimer;
+
+    // Variabel statistik (Menggunakan atomic agar aman beda thread)
+    std::atomic<int> m_frameCount{0};
+    std::atomic<size_t> m_byteCount{0};
+
+    int m_currentFps = 0;
+    double m_currentBandwidth = 0.0;
 
     static GstFlowReturn on_decoded_sample(GstElement* sink, gpointer user_data);
 };

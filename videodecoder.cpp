@@ -34,8 +34,23 @@ VideoDecoder::VideoDecoder(const QString& rtspUrl, QObject *parent)
         });
     });
 
+    m_statsTimer = new QTimer(this);
+    m_statsTimer->setInterval(1000);
+    connect(m_statsTimer, &QTimer::timeout, this, [this]() {
+        // Simpan hitungan ke variabel yang dibaca QML
+        m_currentFps = m_frameCount.exchange(0); // Ambil nilai lalu reset ke 0
+
+        size_t currentBytes = m_byteCount.exchange(0);
+        // Kalkulasi ke Mbps (Megabits per second)
+        m_currentBandwidth = (currentBytes * 8.0) / 1000000.0;
+
+        // Beritahu QML bahwa data statistik diperbarui
+        emit statsChanged();
+    });
+
     startPipeline();
     m_timeoutTimer->start();
+    m_statsTimer->start();
 }
 
 VideoDecoder::~VideoDecoder() {
@@ -71,6 +86,9 @@ GstFlowReturn VideoDecoder::on_decoded_sample(GstElement* sink, gpointer user_da
     GstSample* sample = gst_app_sink_pull_sample(GST_APP_SINK(sink));
     if (!sample) return GST_FLOW_ERROR;
 
+    // Increment FPS Counter (karena 1 sample = 1 frame yang berhasil ditarik)
+    self->m_frameCount++;
+
     GstBuffer* buffer = gst_sample_get_buffer(sample);
     if (!buffer) {
         gst_sample_unref(sample);
@@ -82,6 +100,7 @@ GstFlowReturn VideoDecoder::on_decoded_sample(GstElement* sink, gpointer user_da
         // Konversi buffer decoded ke Format BGRA8888 QtMultimedia
         QVideoFrameFormat format(QSize(640, 480), QVideoFrameFormat::Format_BGRA8888);
         QVideoFrame qframe(format);
+
 
         if (qframe.map(QVideoFrame::WriteOnly)) {
             memcpy(qframe.bits(0), map.data, map.size);
@@ -110,7 +129,7 @@ void VideoDecoder::startPipeline() {
     GError* error = nullptr;
     // Pipeline GStreamer: RTSP (TCP) -> Depay -> Parse -> Decode -> Format BGRA -> AppSink
     QString pipelineStr = QString(
-                              "rtspsrc location=%1 protocols=tcp latency=500 "
+                              "rtspsrc location=%1 protocols=tcp latency=500 " // tambahkan protocols=tcp jika ingin menggunakan tcp
                               "! rtph264depay ! h264parse ! avdec_h264 ! videoconvert ! videoscale "
                               "! video/x-raw,format=BGRA,width=640,height=480 "
                               "! appsink name=mysink emit-signals=true sync=false"
