@@ -130,7 +130,7 @@ void VideoDecoder::startPipeline() {
     // Pipeline GStreamer: RTSP (TCP) -> Depay -> Parse -> Decode -> Format BGRA -> AppSink
     QString pipelineStr = QString(
                               "rtspsrc location=%1 protocols=tcp latency=500 " // tambahkan protocols=tcp jika ingin menggunakan tcp
-                              "! rtph264depay ! h264parse ! avdec_h264 ! videoconvert ! videoscale "
+                              "! queue ! rtph264depay ! queue ! h264parse ! avdec_h264 ! videoconvert ! videoscale "
                               "! video/x-raw,format=BGRA,width=640,height=480 "
                               "! appsink name=mysink emit-signals=true sync=false"
                               ).arg(m_rtspUrl);
