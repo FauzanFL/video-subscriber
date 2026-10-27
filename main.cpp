@@ -13,7 +13,7 @@ int main(int argc, char *argv[])
     // Inisialisasi GStreamer
     gst_init(&argc, &argv);
 
-    VideoDecoder* decoder = new VideoDecoder("rtsp://localhost:8554/stream", &app);
+    VideoDecoder* decoder = new VideoDecoder("rtsp://172.20.3.20:8554/stream", &app);
 
     qmlRegisterSingletonInstance("StreamSubscriber", 1, 0, "BackendDecoder", decoder);
 

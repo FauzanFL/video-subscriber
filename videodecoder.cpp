@@ -20,6 +20,7 @@ VideoDecoder::VideoDecoder(const QString& rtspUrl, QObject *parent)
         if (m_hasVideo) {
             qDebug() << "[VideoDecoder] Koneksi RTSP terputus! Mencoba menghubungkan ulang...";
             setHasVideo(false);
+            m_currentLatency.store(0);
         } else {
             qDebug() << "[VideoDecoder] Mencari stream RTSP...";
         }
@@ -95,8 +96,37 @@ GstFlowReturn VideoDecoder::on_decoded_sample(GstElement* sink, gpointer user_da
         return GST_FLOW_ERROR;
     }
 
+    GstClockTime pts = GST_BUFFER_PTS(buffer);
+    GstObject* parent_obj = gst_element_get_parent(sink);
+
+    if (parent_obj) {
+        GstElement* pipeline = GST_ELEMENT(parent_obj);
+        GstClock* clock = gst_element_get_clock(pipeline);
+
+        if (clock) {
+            if (GST_CLOCK_TIME_IS_VALID(pts)) {
+                GstClockTime current_time = gst_clock_get_time(clock);
+                GstClockTime base_time = gst_element_get_base_time(pipeline);
+
+                if (current_time >= base_time) {
+                    GstClockTime running_time = current_time - base_time;
+
+                    if (running_time >= pts) {
+                        // Kalkulasi selisih dalam milidetik
+                        guint64 latency_ms = (running_time - pts) / GST_MSECOND;
+                        self->m_currentLatency.store(static_cast<int>(latency_ms));
+                    }
+                }
+            }
+            gst_object_unref(clock);
+        }
+        gst_object_unref(parent_obj);
+    }
+
     GstMapInfo map;
     if (gst_buffer_map(buffer, &map, GST_MAP_READ)) {
+        self->m_byteCount += map.size;
+
         // Konversi buffer decoded ke Format BGRA8888 QtMultimedia
         QVideoFrameFormat format(QSize(640, 480), QVideoFrameFormat::Format_BGRA8888);
         QVideoFrame qframe(format);
@@ -129,7 +159,7 @@ void VideoDecoder::startPipeline() {
     GError* error = nullptr;
     // Pipeline GStreamer: RTSP (TCP) -> Depay -> Parse -> Decode -> Format BGRA -> AppSink
     QString pipelineStr = QString(
-                              "rtspsrc location=%1 protocols=tcp latency=500 " // tambahkan protocols=tcp jika ingin menggunakan tcp
+                              "rtspsrc location=%1 protocols=tcp latency=0 drop-on-latency=true " // tambahkan protocols=tcp jika ingin menggunakan tcp
                               "! queue ! rtph264depay ! queue ! h264parse ! avdec_h264 ! videoconvert ! videoscale "
                               "! video/x-raw,format=BGRA,width=640,height=480 "
                               "! appsink name=mysink emit-signals=true sync=false"

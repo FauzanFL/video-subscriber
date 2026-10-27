@@ -15,6 +15,7 @@ class VideoDecoder : public QObject
     Q_PROPERTY(bool hasVideo READ hasVideo NOTIFY hasVideoChanged)
     Q_PROPERTY(int fps READ fps NOTIFY statsChanged)
     Q_PROPERTY(double bandwidth READ bandwidth NOTIFY statsChanged)
+    Q_PROPERTY(int latency READ latency NOTIFY statsChanged)
 public:
 
     explicit VideoDecoder(const QString& rtspUrl, QObject *parent = nullptr);
@@ -26,6 +27,7 @@ public:
     bool hasVideo() const { return m_hasVideo; }
     int fps() const { return m_currentFps; }
     double bandwidth() const { return m_currentBandwidth; }
+    int latency() const { return m_currentLatency.load(); }
 
 signals:
     void videoSinkChanged();
@@ -50,6 +52,7 @@ private:
     // Variabel statistik (Menggunakan atomic agar aman beda thread)
     std::atomic<int> m_frameCount{0};
     std::atomic<size_t> m_byteCount{0};
+    std::atomic<int> m_currentLatency{0};
 
     int m_currentFps = 0;
     double m_currentBandwidth = 0.0;

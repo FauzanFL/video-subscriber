@@ -75,12 +75,21 @@ ApplicationWindow {
 
                 Text {
                     Layout.fillWidth: true
-                    text: "BW : " + BackendDecoder.bandwidth.toFixed(2) + " Mbps"
-                    color: "#00aa88"
+                    text: "Latency: " + BackendDecoder.latency + " ms"
+                    color: "#00ff00" // Hijau ala telemetri
                     font.pixelSize: 14
                     font.bold: true
                     font.family: "Monospace"
                 }
+
+                // Text {
+                //     Layout.fillWidth: true
+                //     text: "BW : " + BackendDecoder.bandwidth.toFixed(2) + " Mbps"
+                //     color: "#00aa88"
+                //     font.pixelSize: 14
+                //     font.bold: true
+                //     font.family: "Monospace"
+                // }
             }
         }
     }
